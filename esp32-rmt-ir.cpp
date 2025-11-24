@@ -3,8 +3,8 @@ https://github.com/junkfix/esp32-rmt-ir
 */
 #include "esp32-rmt-ir.h"
 
-uint8_t irRxPin = 34;
-uint8_t irTxPin = 4;
+uint8_t ir_rx_pin_rmt = -1;
+uint8_t ir_tx_pin_rmt = -1;
 
 const ir_protocol_t proto[PROTO_COUNT] = {
 	[UNK]  = {    0,    0,    0,    0,   0,   0,   0, 0,     0, "UNK"  },
@@ -14,18 +14,49 @@ const ir_protocol_t proto[PROTO_COUNT] = {
 	[RC5]  = { 0,       0,  889,  889, 889, 889,   0, 0, 38000, "RC5"  },
 };
 
-const uint8_t  bitMargin = 120;
+const uint8_t bit_margin_rmt = 120;
 
-volatile uint8_t irTX = 0;
-volatile uint8_t irRX = 0;
+volatile uint8_t ir_tx_flag_rmt = 0;
+volatile uint8_t ir_rx_flag_rmt= 0;
 
-void recvIR(void* param){
+
+void ir_recvd_rmt(irproto brand, uint32_t code, size_t len, rmt_symbol_word_t *item){
+	if( code ){
+		ESP_LOGD(RMT_IR_TAG, "IR %s, code: %#x, bits: %d",  proto[brand].name, code, len);
+	}
+	
+	if (true)	// debug
+	{
+		ESP_LOGD(RMT_IR_TAG, "Rx%d:", len);							
+		for (uint8_t i=0; i < len ; i++ ) {
+			int d0 = item[i].duration0; if(!item[i].level0){d0 *= -1;}
+			int d1 = item[i].duration1; if(!item[i].level1){d1 *= -1;}
+			ESP_LOGD(RMT_IR_TAG, "%d,%d", d0, d1);
+		}								
+	}
+}
+
+void ir_init_rmt(uint8_t tx_pin, uint8_t rx_pin) {
+	if (tx_pin != -1) 
+	{
+		ir_tx_pin_rmt = tx_pin;
+	}
+	if (rx_pin != -1)
+	{
+		ir_rx_pin_rmt = rx_pin;
+		xTaskCreatePinnedToCore(recv_ir_rmt, "recv_ir_rmt", 2048, NULL, 10, NULL, 1);
+	}
+}
+
+void recv_ir_rmt(void* param){
+	if (ir_rx_pin == -1) return;
+
 	rmt_rx_done_event_data_t rx_data;
 	QueueHandle_t rx_queue = xQueueCreate(1, sizeof(rx_data));
 
 	for(;;){
-		if(irTX){vTaskDelay( 300 / portTICK_PERIOD_MS ); continue;}
-		irRX = 1;
+		if(ir_tx_flag_rmt){vTaskDelay( 300 / portTICK_PERIOD_MS ); continue;}
+		ir_rx_flag_rmt = 1;
 		rmt_channel_handle_t rx_channel = NULL;
 		rmt_symbol_word_t symbols[64];
 		
@@ -76,7 +107,7 @@ void recvIR(void* param){
 		}
 		rmt_disable(rx_channel);
 		rmt_del_channel(rx_channel);
-		irRX = 0;
+		ir_rx_flag_rmt = 0;
 	}
 	vQueueDelete(rx_queue);
 	vTaskDelete(NULL);
@@ -84,11 +115,12 @@ void recvIR(void* param){
 
 
 
-void sendIR(irproto brand, uint32_t code, uint8_t bits, uint8_t burst, uint8_t repeat) {
-
-	irTX = 1;
+void send_ir_rmt(irproto brand, uint32_t code, uint8_t bits, uint8_t burst, uint8_t repeat) {
+	if (ir_tx_pin_rmt == -1) return;
+	
+	ir_tx_flag_rmt = 1;
 	for(;;){
-		if(irRX == 0){break;}
+		if(ir_rx_flag_rmt == 0){break;}
 		vTaskDelay( 2 / portTICK_PERIOD_MS );
 	}
 
@@ -150,11 +182,11 @@ void sendIR(irproto brand, uint32_t code, uint8_t bits, uint8_t burst, uint8_t r
 	rmt_disable(tx_channel);
 	rmt_del_channel(tx_channel);
 	rmt_del_encoder(encoder_handle);
-	irTX = 0;
+	ir_tx_flag_rmt = 0;
 }
 
 
-uint32_t nec_check(rmt_symbol_word_t *item, size_t &len){
+uint32_t nec_check_rmt(rmt_symbol_word_t *item, size_t &len){
 	const uint8_t  totalData = 34;
 	if(len < totalData ){
 		return 0;
@@ -169,7 +201,7 @@ uint32_t nec_check(rmt_symbol_word_t *item, size_t &len){
 		}else if(checkbit(item[i], proto[NEC].one_high, proto[NEC].one_low)){
 			code |= (m >> (i - 1) );
 		}else if(!checkbit(item[i], proto[NEC].zero_high, proto[NEC].zero_low)){
-			//Serial.printf("BitError i:%d\n",i);
+			ESP_LOGD(RMT_IR_TAG, "BitError i:%d",i);
 			return 0;
 		}
 	}
@@ -177,7 +209,7 @@ uint32_t nec_check(rmt_symbol_word_t *item, size_t &len){
 }
 
 
-uint32_t sam_check(rmt_symbol_word_t *item, size_t &len){
+uint32_t sam_check_rmt(rmt_symbol_word_t *item, size_t &len){
 	const uint8_t  totalData = 34;
 	if(len < totalData ){
 		return 0;
@@ -192,7 +224,7 @@ uint32_t sam_check(rmt_symbol_word_t *item, size_t &len){
 		}else if(checkbit(item[i], proto[SAM].one_high, proto[SAM].one_low)){
 			code |= (m >> (i - 1) );
 		}else if(!checkbit(item[i], proto[SAM].zero_high, proto[SAM].zero_low)){
-			//Serial.printf("BitError i:%d\n",i);
+			ESP_LOGD(RMT_IR_TAG, "BitError i:%d", i);
 			return 0;
 		}
 	}
@@ -200,7 +232,7 @@ uint32_t sam_check(rmt_symbol_word_t *item, size_t &len){
 }
 
 
-uint32_t sony_check(rmt_symbol_word_t *item, size_t &len){
+uint32_t sony_check_rmt(rmt_symbol_word_t *item, size_t &len){
 	const uint8_t totalMin = 12;
 	uint8_t i = 0;
 	if(len < totalMin || !checkbit(item[i], proto[SONY].header_high, proto[SONY].header_low)){
@@ -221,7 +253,8 @@ uint32_t sony_check(rmt_symbol_word_t *item, size_t &len){
 			//len = i+1;
 			break;
 		}else{
-			//Serial.printf("BitError %d, max:%d, j:%d\n",i, maxData, j); Serial.printf("d0:%d, d1:%d, L0:%d L1:%d\n", item[i].duration0, item[i].duration1, item[i].level0, item[i].level1);
+			ESP_LOGD(RMT_IR_TAG, "BitError %d, max:%d, j:%d",i, maxData, j); 
+			ESP_LOGD(RMT_IR_TAG, "d0:%d, d1:%d, L0:%d L1:%d", item[i].duration0, item[i].duration1, item[i].level0, item[i].level1);
 			return 0;
 		}
 		i++;
@@ -232,7 +265,7 @@ uint32_t sony_check(rmt_symbol_word_t *item, size_t &len){
 }
 
 
-uint32_t rc5_check(rmt_symbol_word_t *item, size_t &len){
+uint32_t rc5_check_rmt(rmt_symbol_word_t *item, size_t &len){
 	if(len < 13 || len > 30 ){
 		return 0;
 	}
@@ -247,25 +280,25 @@ uint32_t rc5_check(rmt_symbol_word_t *item, size_t &len){
 		} else if (rc5_bit(d0, RC5_High)) {
 			code = (code << 2) | (item[i].level0 << 1) | !item[i].level0;
 			c = rc5_bit(d1, proto[RC5].one_low) ? !c : c;
-		}else{
-			//Serial.printf("BitError i:%d\n",i);
+		} else {
+			ESP_LOGD(RMT_IR_TAG, "BitError i:%d", i);
 			return 0;
 		}
 	}
 	return code;
 }
 
-bool rc5_bit(uint32_t d, uint32_t v) {
-	return (d < (v + bitMargin)) && (d > (v - bitMargin));
+bool rc5_bit_rmt(uint32_t d, uint32_t v) {
+	return (d < (v + bit_margin_rmt)) && (d > (v - bit_margin_rmt));
 }
 
 
-bool checkbit(rmt_symbol_word_t &item, uint16_t high, uint16_t low){
+bool check_bit_rmt(rmt_symbol_word_t &item, uint16_t high, uint16_t low){
 	return item.level0 == 0 && item.level1 != 0 &&
-		item.duration0 < (high + bitMargin) && item.duration0 > (high - bitMargin) &&
-		item.duration1 < (low + bitMargin) && item.duration1 > (low - bitMargin);
+		item.duration0 < (high + bit_margin_rmt) && item.duration0 > (high - bit_margin_rmt) &&
+		item.duration1 < (low + bit_margin_rmt) && item.duration1 > (low - bit_margin_rmt);
 }
-bool irrx_done(rmt_channel_handle_t channel, const rmt_rx_done_event_data_t *edata, void *udata){
+bool ir_rx_done_rmt(rmt_channel_handle_t channel, const rmt_rx_done_event_data_t *edata, void *udata){
 	BaseType_t h = pdFALSE;
 	QueueHandle_t q = (QueueHandle_t)udata;
 	xQueueSendFromISR(q, edata, &h);
@@ -350,7 +383,7 @@ size_t rmt_encode_ir(rmt_encoder_t *encoder, rmt_channel_handle_t channel, const
 	return encoded_symbols;
 }
 
-void fill_item(rmt_symbol_word_t &item, uint16_t high, uint16_t low, bool bit){
+void fill_item_rmt(rmt_symbol_word_t &item, uint16_t high, uint16_t low, bool bit){
 	item.level0 = !bit;
 	item.duration0 = high;
 	item.level1 = bit;
