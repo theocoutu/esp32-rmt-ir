@@ -5,15 +5,14 @@ https://github.com/junkfix/esp32-rmt-ir
 #ifndef ir_rmt_esp32
 #define ir_rmt_esp32
 
-#include <Arduino.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/rmt_rx.h"
 #include "driver/rmt_tx.h"
 #include "driver/rmt_encoder.h"
 
-extern uint8_t irRxPin;
-extern uint8_t irTxPin;
+extern uint8_t ir_rx_pin_rmt;
+extern uint8_t ir_tx_pin_rmt;
 
 enum irproto { UNK, NEC, SONY, SAM, RC5, PROTO_COUNT };
 
@@ -46,19 +45,19 @@ typedef struct {
 
 extern const ir_protocol_t proto[PROTO_COUNT];
 
-extern void irReceived(irproto brand, uint32_t code, size_t len, rmt_symbol_word_t *item);
-void sendIR(irproto brand, uint32_t code, uint8_t bits = 32, uint8_t burst = 1, uint8_t repeat = 1);
+extern void ir_recvd_rmt(irproto brand, uint32_t code, size_t len, rmt_symbol_word_t *item);
+void send_ir_rmt(irproto brand, uint32_t code, uint8_t bits = 32, uint8_t burst = 1, uint8_t repeat = 1);
 
-IRAM_ATTR bool irrx_done(rmt_channel_handle_t channel, const rmt_rx_done_event_data_t *edata, void *udata);
+IRAM_ATTR bool ir_rx_done_rmt(rmt_channel_handle_t channel, const rmt_rx_done_event_data_t *edata, void *udata);
 
-void recvIR(void* param);
-uint32_t nec_check(rmt_symbol_word_t *item, size_t &len);
-uint32_t sam_check(rmt_symbol_word_t *item, size_t &len);
-uint32_t sony_check(rmt_symbol_word_t *item, size_t &len);
-uint32_t rc5_check(rmt_symbol_word_t *item, size_t &len);
-bool rc5_bit(uint32_t d, uint32_t v);
-bool checkbit(rmt_symbol_word_t &item, uint16_t high, uint16_t low);
-void fill_item(rmt_symbol_word_t &item, uint16_t high, uint16_t low, bool bit);
+void recv_ir_rmt(void* param);
+uint32_t nec_check_rmt(rmt_symbol_word_t *item, size_t &len);
+uint32_t sam_check_rmt(rmt_symbol_word_t *item, size_t &len);
+uint32_t sony_check_rmt(rmt_symbol_word_t *item, size_t &len);
+uint32_t rc5_check_rmt(rmt_symbol_word_t *item, size_t &len);
+bool rc5_bit_rmt(uint32_t d, uint32_t v);
+bool check_bit_rmt(rmt_symbol_word_t &item, uint16_t high, uint16_t low);
+void fill_item_rmt(rmt_symbol_word_t &item, uint16_t high, uint16_t low, bool bit);
 
 static esp_err_t rmt_ir_encoder_reset(rmt_encoder_t *encoder);
 static esp_err_t rmt_del_ir_encoder(rmt_encoder_t *encoder);
