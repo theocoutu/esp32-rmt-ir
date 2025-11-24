@@ -14,8 +14,9 @@ https://github.com/junkfix/esp32-rmt-ir
 extern uint8_t ir_rx_pin_rmt;
 extern uint8_t ir_tx_pin_rmt;
 
-enum irproto { UNK, NEC, SONY, SAM, RC5, PROTO_COUNT };
+#define RMT_IR_TAG "esp32-rmt-ir"
 
+enum irproto { UNK, NEC, SONY, SAM, RC5, PROTO_COUNT };
 
 typedef struct {
 	rmt_encoder_t base;
@@ -44,6 +45,8 @@ typedef struct {
 } ir_protocol_t;
 
 extern const ir_protocol_t proto[PROTO_COUNT];
+
+void ir_init_rmt(uint8_t tx_pin, uint8_t rx_pin);
 
 extern void ir_recvd_rmt(irproto brand, uint32_t code, size_t len, rmt_symbol_word_t *item);
 void send_ir_rmt(irproto brand, uint32_t code, uint8_t bits = 32, uint8_t burst = 1, uint8_t repeat = 1);
